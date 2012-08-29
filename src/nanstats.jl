@@ -1,85 +1,80 @@
 # Statistical functions on Float arrays that can skip NaN values.
 
-# Maybe nanfun is what we'll have to do.  The var functions have been hard to
-# implement because there are so many versions we get conflicts.  There should
-# be a common interface though.
-
-
-mean{T<:Float}(v::AbstractArray{T}, skipna::Bool) = 
-  (sum(v, skipna) / (skipna ? sum(!isnan(v)) : numel(v)))
-mean{T<:Float}(v::AbstractArray{T}, dim::Int, skipna::Bool) = 
-  (sum(v, dim, skipna) ./ (skipna ? sum(!isnan(v), dim) : size(v,dim)))
-mean{T<:Float}(v::AbstractArray{T}, region::Dimspec, skipna::Bool) = 
-  sum(v, region, skipna) ./ sum(!isnan(v), region)
-function weighted_mean{T<:Float}(v::AbstractArray{T}, w::AbstractArray, 
-                                 skipna::Bool)
-    vw = v .* w
-    return sum(vw, skipna) / (skipna ? sum(vw, skipna) : sum(w))
-end
-
-mean{T<:Float}(A::NAFilter{T}) = mean(A.x, true)
 function mean{T<:Float}(A::NAFilter{T})
-    sum(A) / sum(!isnan(A.x))
+    s = 0.0
+    n = 0
+    A = A.x
+    for x in A
+        if !isnan(x)
+            s += x
+            n += 1
+        end
+    end
+    s ./ n
 end
+
+# These need to be optimized
 function mean{T<:Float}(A::NAFilter{T}, dim::Int)
-    s = sum(A, dim)
-    n = sum(!isnan(A.x),dim)
+    s = sum(A, region)
+    n = nanaccum(A.x, dim)
     s ./ n
 end
 function mean{T<:Float}(A::NAFilter{T}, region::Dimspec)
     s = sum(A, region)
-    n = sum(!isnan(A.x), region)
+    n = nanaccum(A.x, region)
     s ./ n
 end
-# Just call the skipna version
-weighted_mean{T<:Float}(A::NAFilter{T}, w::AbstractArray) = 
-    weighted_mean(A.x, w, true)
 
-function median{T<:Float}(v::AbstractArray{T}, skipnan::Bool)
-    if skipnan
-        v = v[!isnan(v)]
+function weighted_mean{T<:Float}(A::NAFilter{T}, w::AbstractArray)
+    num = 0.0
+    den = 0.0
+    A = A.x
+    for i in 1:numel(A)
+        Ai = A[i]
+        wi = w[i]
+        if !isnan(Ai)
+            num += Ai * wi
+            den += wi
+        end
     end
+    num ./ den
+end
+
+function median{T<:Float}(A::NAFilter{T})
+    # There may be a faster way to do this, but we have to extract and sort 
+    # the values.
+    A = A.x
+    A = A[!isnan(v)]
     n = numel(v)
     if isodd(n)
         return select(v, div(n+1, 2))
     else
-        vs = sort(v)
-        return (vs[div(n, 2)] + vs[div(n, 2) + 1]) / 2
+        As = sort(A)
+        return (As[div(n, 2)] + vs[div(n, 2) + 1]) / 2
     end
 end
-median{T<:Float}(A::NAFilter{T}) = median(A.x, true)
 
-## variance with known mean
-#function var{T<:Float}(v::AbstractVector{T}, m::Number, corrected::Bool,
-#                       skipna::Bool)
-#    if skipna
-#        n = sum(!isnan(v))
-#    else
-#        n = length(v)
-#    end
-#    if n == 0 || (n == 1 && corrected)
-#        return NaN
-#    end
-#    x = v - m
-#    return sum(x.*x, skipna) / (n - (corrected ? 1 : 0))
-#end
-#var{T<:Float}(v::AbstractArray{T}, m::Number, corrected::Bool, skipna::Bool) = 
-#    var(reshape(v, numel(v)), m, corrected, skipna)
-## Need the following method so that the one after is not ambiguous
-#var{T<:Float}(v::Ranges{T}, corrected::Bool, skipna::Bool) = var(v, corrected)
-#var{T<:Float}(v::AbstractVector{T}, corrected::Bool, skipna::Bool) = 
-#    var(v, mean(v, skipna), corrected, skipna)
-#var{T<:Float}(v::AbstractArray{T}, corrected::Bool, skipna::Bool) = 
-#    var(reshape(v, numel(v)), corrected, skipna)
-#
-## Need the followingos the one afterward is not ambiguous
-#var{T<:Float}(v::AbstractArray{T}, m::Int64, corrected::Bool, skipna::Bool) =
-#    var(v, convert(m, T), corrected, skipna)
-#function var{T<:Float}(v::AbstractArray{T}, region::Dimspec, corrected::Bool, 
-#                       skipna::Bool)
-#    m = mean(v, skipna)
-#
-#end
+function var{T<:Float}(A::NAFilter{T}, corrected::Bool)
+    x = A.x
+    n = 0
+    sx = 0.0
+    ssx = 0.0
+    for xi in x 
+        if !isnan(xi)
+            sx += xi
+            ssx += xi.^2
+            n += 1
+        end
+    end
+    if n == 0 || (n == 1 && corrected)
+        return NaN
+    end
+    m = sx ./ n
+    return (ssx - 2*m*sx + n*m.^2) ./ (n - (corrected ? 1 : 0))
+end
+var{T<:Float}(A::NAFilter{T}) = var(A, true)
+
+
 
 ## TODO
 ## standard deviation with known mean

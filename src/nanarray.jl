@@ -2,197 +2,110 @@
 # Assumes nf.jl has been loaded
 
 # Should probably restrict this to type
-type NAFilter{T<:Float} <: AbstractArray{T} 
-    x::Array{T}
+type NAFilter{T<:Float,N}
+    x::Array{T,N}
 end
+show(io, naf::NAFilter) = show(naf.x)
 
-naFilter{T<:Float}(x::StridedArray{T}) = NAFilter(x)
+naFilter{T<:Float,N}(x::AbstractArray{T,N}) = NAFilter(x)
 
 function sum{T<:Float}(A::NAFilter{T})
     A = A.x
     s = zero(T)
     c = zero(T)
     for x in A
-        if ~isnan(x)
+        if !isnan(x)
             t = s + x
             if abs(s) >= abs(x)
                 c += ((s-t) + x)
             else
-              c += ((x-t) + s)
+                c += ((x-t) + s)
             end
+            s = t
         end
-        s = t
     end
     s + c
 end
 
-
-# Versions of functions that act on whole Array with no parameters.
-function sum{T<:Float}(A::StridedArray{T}, skipna::Bool)
-    n = length(A)
-    if (n == 0)
-        return zero(T)
-    end
-    s = A[1]
-    c = zero(T)
-    for i in 2:n
-        Ai = A[i]
-        if skipna && isnan(Ai)
-            continue
-        end
-        t = s + Ai
-        if abs(s) >= abs(Ai)
-            c += ((s-t) + Ai)
-        else
-            c += ((Ai-t) + s)
-        end
-        s = t
-    end
-    s + c
-end
-
-nansum{T<:Float}(A::StridedArray{T}) = sum(A, true)
-
-function sum{T<:Float}(A::StridedArray{T}, opts::Options)
-    @defaults opts skipna = false
-    return sum(A, skipna)
-end
-
-function prod{T<:Float}(A::StridedArray{T}, skipna::Bool)
+function prod{T<:Float}(A::NAFilter{T})
+    A = A.x
     if isempty(A)
         return one(T)
     end
-    v = A[1]
-    for i=2:numel(A)
-        Ai = A[i]
-        if skipna && !isnan(Ai)
-            v *= Ai
+    v = one(T)
+    for x in A
+        if !isnan(x)
+            v *= x
         end
     end
     v
 end
 
-function prod{T<:Float}(A::StridedArray{T}, opts::Options)
-    @defaults opts skipna = false
-    return prod(A, skipna)
-end
-
-nanprod{T<:Float}(A::StridedArray{T}) = prod(A, true)
-
-function min{T<:Float}(A::StridedArray{T}, skipna::Bool)
+function min{T<:Float}(A::NAFilter{T})
+    A = A.x
     v = typemax(T)
-    for i=1:numel(A)
-        Ai = A[i]
-        if skipna && isnan(Ai)
-            continue
-        end
-        if x < v
+    for x in A
+        if !isnan(x) && x < v
             v = x
         end
     end
     v
 end
 
-function min{T<:Float}(A::StridedArray{T}, opts::Options)
-    @defaults opts skipna = false
-    return min(A, skipna)
-end
-
-nanmin{T<:Float}(A::StridedArray{T}) = min(A, true)
-
-function max{T<:Float}(A::StridedArray{T}, skipna::Bool)
+function max{T<:Float}(A::NAFilter{T})
+    A = A.x
     v = typemin(T)
-    for i=1:numel(A)
-        Ai = A[i]
-        if skipna && isnan(Ai)
-            continue
-        end
-        if x > v
+    for x in A
+        if !isnan(x) && x > v
             v = x
         end
     end
     v
 end
 
-function max{T<:Float}(A::StridedArray{T}, opts::Options)
-    @defaults opts skipna = false
-    return max(A, skipna)
+function nancount{T<:Float}(A::AbstractArray{T})
+    nn = 0
+    for x in A
+        if isnan(x)
+            nn += 1
+        end
+    end
+    nn
 end
-
-nanmax{T<:Float}(A::StridedArray{T}) = max(A, true)
 
 # Operations that ignore NaN for Floats.  Used for versions of array functions
 # that use areduce.
-_nanplus{T<:Float}(x::T, y::T) = ((isnan(x) ? zero(T) : x) 
-                                  + (isnan(y) ? zero(T) : y))
-_nanprod{T<:Float}(x::T, y::T) = ((isnan(x) ? one(T) : x)
-                                  * (isnan(y) ? one(T) : y))
-_nanmin{T<:Float}(x::T, y::T) = min(isnan(x) ? typemax(T) : x,
-                                   isnan(y) ? typemax(T) : y)
-_nanmax{T<:Float}(x::T, y::T) = max(isnan(x) ? typemin(T) : x,
-                                   isnan(y) ? typemin(T) : y)
+#_nanplus{T<:Float}(x::T, y::T) = (x + (isnan(y) ? zero(T) : y))
+#_nanprod{T<:Float}(x::T, y::T) = (x * (isnan(y) ? one(T) : y))
+#_nanmin{T<:Float}(x::T, y::T) = min(x, isnan(y) ? typemax(T) : y)
+#_nanmax{T<:Float}(x::T, y::T) = max(x, isnan(y) ? typemin(T) : y)
+#_nanaccum{T<:Int,S<:Float}(x::T, y::S) = (x + (isnan(y) ? one(T) : zero(T)))
+_nanplus{T<:Float}(x::T, y::T) = (x + ((y != y) ? zero(T) : y))
+_nanprod{T<:Float}(x::T, y::T) = (x * ((y != y) ? one(T) : y))
+_nanmin{T<:Float}(x::T, y::T) = min(x, (y != y) ? typemax(T) : y)
+_nanmax{T<:Float}(x::T, y::T) = max(x, (y != y) ? typemin(T) : y)
+_nanaccum{T<:Int,S<:Float}(x::T, y::S) = (x + ((y != y) ? one(T) : zero(T)))
+
+# Tried with AbstractArray also
+function nancount{T<:Float}(A::AbstractArray{T}, region::Dimspec)
+    areduce(_nanaccum, A, region, zero(Int64), Int64)
+end
 
 # Array functions that allow ignoring NaNs in terms of a reduce.
-function sum{T<:Float}(A::StridedArray{T}, region::Dimspec, skipna::Bool)
-    if skipna
-        areduce(_nanplus, A, region, zero(T))
-    else
-        sum(A, region)
-    end
-end
-
 function sum{T<:Float}(A::NAFilter{T}, region::Dimspec)
-    areduce(_nanplus, A.x, region, zero(T))
+    areduce(_nanplus, A.x, region, zero(T), T)
 end
 
-function sum{T<:Float}(A::StridedArray{T}, region::Dimspec, opts::Options)
-    @defaults opts skipna = false
-    return sum(A, region, skipna)
+function prod{T<:Float}(A::NAFilter{T}, region::Dimspec)
+    areduce(_nanprod, A.x, region, one(T), T)
 end
 
-nansum{T<:Float}(A::StridedArray{T}, region::Dimspec) = sum(A, region, true)
-
-function prod{T<:Float}(A::StridedArray{T}, region::Dimspec, skipna::Bool)
-    if skipna
-        areduce(_nanprod, A, region, zero(T))
-    else
-        prod(A, region)
-    end
+function min{T<:Float}(A::NAFilter{T}, region::Dimspec)
+    #areduce(_nanmin, A.x, region, typemax(T), T)
+    areduce(_nanmin, A.x, region, typemax(T), T)
 end
 
-function prod{T<:Float}(A::StridedArray{T}, region::Dimspec, opts::Options)
-    @defaults opts skipna = false
-    return prod(A, region, skipna)
+function max{T<:Float}(A::NAFilter{T}, region::Dimspec)
+    #areduce(_nanmax, A, region, typemin(T), T)
+    areduce(_nanmax, A, region, typemin(T), T)
 end
-
-nanprod{T<:Float}(A::StridedArray{T}, region::Dimspec) = prod(A, region, true)
-
-function min{T<:Float}(A::StridedArray{T}, region::Dimspec, skipna::Bool)
-  if skipna
-      areduce(_nanmin, A, region, typemax(T), T)
-  else
-      min(A, region)
-  end
-end
-
-function min{T<:Float}(A::StridedArray{T}, region::Dimspec, opts::Options)
-    @defaults opts skipna = false
-    return min(A, region, skipna)
-end
-
-nanmin{T<:Float}(A::StridedArray{T}, region::Dimspec) = min(A, region, true)
-
-function max{T<:Float}(A::StridedArray{T}, region::Dimspec, skipna::Bool)
-  if skipna
-      areduce(_nanmax, A, region, typemin(T), T)
-  else
-      max(A, region)
-  end
-end
-
-function max{T<:Float}(A::StridedArray{T}, region::Dimspec, opts::Options)
-    @defaults opts skipna = false
-    return max(A, region, skipna)
-end
-
-nanmax{T<:Float}(A::StridedArray{T}, region::Dimspec) = max(A, region, true)
