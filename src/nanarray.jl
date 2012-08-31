@@ -92,7 +92,7 @@ function nancount{T<:Float}(A::AbstractArray{T}, region::Dimspec)
 end
 
 # Array functions that allow ignoring NaNs in terms of a reduce.
-function sum{T<:Float}(A::NAFilter{T}, region::Dimspec)
+function sum{T<:Float,N}(A::NAFilter{T,N}, region::Dimspec)
     areduce(_nanplus, A.x, region, zero(T), T)
 end
 

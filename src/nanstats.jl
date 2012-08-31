@@ -13,11 +13,52 @@ function mean{T<:Float}(A::NAFilter{T})
     s ./ n
 end
 
+# Implement rowmeans and colmeans to specialize the dim version for rows and
+# columns.
+# DEBUG
+function rowmeans{T<:Float}(A::NAFilter{T})
+    A = A.x
+    nr, nc = size(A)
+    rsums = zeros(T, nr)
+    robs = zeros(T, nr)
+    for i = 0:(length(A)-1)
+        Ai = A[i+1]
+        if !isnan(Ai)
+            ri = 1 + int64(i % nr)
+            rsums[ri] += Ai
+            robs[ri] += 1
+        end
+    end
+    rsums ./ robs
+end
+function colmeans{T<:Float}(A::NAFilter{T})
+    A = A.x
+    nr, nc = size(A)
+    csums = zeros(T, nc)
+    cobs = zeros(T, nc)
+    for i = 0:(length(A)-1)
+        Ai = A[i+1]
+        if !isnan(Ai)
+            ci = 1 + int64(floor(i / nr))
+            csums[ci] += Ai
+            cobs[ci] += 1
+        end
+    end
+    csums ./ cobs
+end
+
 # These need to be optimized
 function mean{T<:Float}(A::NAFilter{T}, dim::Int)
-    s = sum(A, region)
-    n = nanaccum(A.x, dim)
-    s ./ n
+# For dimensions 1 and 2 call rowmeans/colmeans
+    if dim == 1
+        colmeans(A)
+    elseif dim == 2
+        rowmeans(A)
+    else
+        s = sum(A, region)
+        n = nanaccum(A.x, dim)
+        s ./ n
+    end
 end
 function mean{T<:Float}(A::NAFilter{T}, region::Dimspec)
     s = sum(A, region)
